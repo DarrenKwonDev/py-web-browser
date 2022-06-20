@@ -37,7 +37,7 @@ def layout(text):
 
 class Browser():
     def __init__(self) -> None:
-        self.window = tkinter.Tk()
+        self.window = tkinter.Tk() # Talks to your operating system to create a window
         self.canvas = tkinter.Canvas(self.window, width=WIDTH, height=HEIGHT)
         self.canvas.pack()
 
