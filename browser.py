@@ -1,5 +1,6 @@
 from utils.url_request import request
 import tkinter # https://docs.python.org/ko/3/library/tkinter.html
+import tkinter.font
 
 WIDTH, HEIGHT = 800, 600
 HSTEP, VSTEP = 13, 18
@@ -16,10 +17,6 @@ def lex(body):
         elif not in_angle:
             text += c
     return text
-
-def load(url):
-    _, body = request(url)
-    lex(body)
 
 def layout(text):
     '''
@@ -43,6 +40,13 @@ class Browser():
 
         self.scroll = 0
         self.window.bind("<Down>", self.scrolldown)
+        self.bi_times = tkinter.font.Font(
+            family="Times",
+            size=16,
+            weight="bold",
+            slant="italic",
+        )
+
 
     def load(self, url):
         _, body = request(url)
@@ -60,7 +64,7 @@ class Browser():
             # 이 최적화를 하느냐, 안 하느냐에 따라서 생각보다 스크롤 속도에 차이가 존재한다.
             if y > self.scroll + HEIGHT: continue
             if y + VSTEP < self.scroll: continue 
-            self.canvas.create_text(x, y - self.scroll, text=c)
+            self.canvas.create_text(x, y - self.scroll, text=c, font=self.bi_times)
 
     def scrolldown(self, e):
         self.scroll += SCROLL_STEP
