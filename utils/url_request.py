@@ -29,13 +29,11 @@ def request(url: str):
         header, value = line.split(":", 1)
         headers[header.lower()] = value.strip()
 
-    print("headers", headers)
 
     assert "transfer-encoding" not in headers # allows the data to be “chunked”
     assert "content-encoding" not in headers # lets the server compress web pages before sending them
 
     body = response.read() # 앞서 header 다 읽었고, \r\n 공백 하단은 body겠지?
-    print("body", body)
     s.close()
 
     return headers, body
