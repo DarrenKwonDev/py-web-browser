@@ -1,5 +1,6 @@
 import tkinter # https://docs.python.org/ko/3/library/tkinter.html
 import tkinter.font
+from parse.css_parse import CSSParser
 from utils.url_request import request
 from parse.http_parse import HTMLParser, Text, Element, print_tree
 
@@ -15,6 +16,93 @@ def get_font(size, weight, slant):
         font = tkinter.font.Font(size=size, weight=weight, slant=slant)
         FONTS[key] = font
     return FONTS[key]
+
+def resolve_url(url, current):
+    if "://" in url:
+        return url
+    elif url.startswith("/"):
+        scheme, hostpath = current.split("://", 1)
+        host, oldpath = hostpath.split("/", 1)
+        return scheme + "://" + host + url
+    else:
+        scheme, hostpath = current.split("://", 1)
+        if "/" not in hostpath:
+            current = current + "/"
+        dir, _ = current.rsplit("/", 1)
+        while url.startswith("../"):
+            url = url[3:]
+            if dir.count("/") == 2: continue
+            dir, _ = dir.rsplit("/", 1)
+        return dir + "/" + url
+
+def tree_to_list(tree, list):
+    list.append(tree)
+    for child in tree.children:
+        tree_to_list(child, list)
+    return list
+
+
+class TagSelector:
+    def __init__(self, tag):
+        self.tag = tag
+        self.priority = 1
+
+    def matches(self, node):
+        return isinstance(node, Element) and self.tag == node.tag
+
+    def __repr__(self):
+        return "TagSelector(tag={}, priority={})".format(
+            self.tag, self.priority)
+
+
+INHERITED_PROPERTIES = {
+    "font-size": "16px",
+    "font-style": "normal",
+    "font-weight": "normal",
+    "color": "black",
+}
+
+def compute_style(node, property, value):
+    if property == "font-size":
+        if value.endswith("px"):
+            return value
+        elif value.endswith("%"):
+            if node.parent:
+                parent_font_size = node.parent.style["font-size"]
+            else:
+                parent_font_size = INHERITED_PROPERTIES["font-size"]
+            node_pct = float(value[:-1]) / 100
+            parent_px = float(parent_font_size[:-2])
+            return str(node_pct * parent_px) + "px"
+        else:
+            return None
+    else:
+        return value
+
+def style(node, rules):
+    node.style = {}
+    for property, default_value in INHERITED_PROPERTIES.items():
+        if node.parent:
+            node.style[property] = node.parent.style[property]
+        else:
+            node.style[property] = default_value
+    for selector, body in rules:
+        if not selector.matches(node): continue
+        for property, value in body.items():
+            computed_value = compute_style(node, property, value)
+            if not computed_value: continue
+            node.style[property] = computed_value
+    if isinstance(node, Element) and "style" in node.attributes:
+        pairs = CSSParser(node.attributes["style"]).body()
+        for property, value in pairs.items():
+            computed_value = compute_style(node, property, value)
+            node.style[property] = computed_value
+    for child in node.children:
+        style(child, rules)
+
+def cascade_priority(rule):
+    selector, body = rule
+    return selector.priority
 
 
 BLOCK_ELEMENTS = [
@@ -37,6 +125,31 @@ def layout_mode(node):
         return "inline"
     else:
         return "block"
+
+def resolve_url(url, current):
+    if "://" in url:
+        return url
+    elif url.startswith("/"):
+        scheme, hostpath = current.split("://", 1)
+        host, oldpath = hostpath.split("/", 1)
+        return scheme + "://" + host + url
+    else:
+        scheme, hostpath = current.split("://", 1)
+        if "/" not in hostpath:
+            current = current + "/"
+        dir, _ = current.rsplit("/", 1)
+        while url.startswith("../"):
+            url = url[3:]
+            if dir.count("/") == 2: continue
+            dir, _ = dir.rsplit("/", 1)
+        return dir + "/" + url
+
+def tree_to_list(tree, list):
+    list.append(tree)
+    for child in tree.children:
+        tree_to_list(child, list)
+    return list
+
 
 class BlockLayout:
     def __init__(self, node, parent, previous):
@@ -91,6 +204,57 @@ class BlockLayout:
         return "BlockLayout(x={}, y={}, width={}, height={}, node={})".format(
             self.x, self.y, self.width, self.height, self.node)
 
+
+
+INHERITED_PROPERTIES = {
+    "font-size": "16px",
+    "font-style": "normal",
+    "font-weight": "normal",
+    "color": "black",
+}
+
+def compute_style(node, property, value):
+    if property == "font-size":
+        if value.endswith("px"):
+            return value
+        elif value.endswith("%"):
+            if node.parent:
+                parent_font_size = node.parent.style["font-size"]
+            else:
+                parent_font_size = INHERITED_PROPERTIES["font-size"]
+            node_pct = float(value[:-1]) / 100
+            parent_px = float(parent_font_size[:-2])
+            return str(node_pct * parent_px) + "px"
+        else:
+            return None
+    else:
+        return value
+
+def style(node, rules):
+    node.style = {}
+    for property, default_value in INHERITED_PROPERTIES.items():
+        if node.parent:
+            node.style[property] = node.parent.style[property]
+        else:
+            node.style[property] = default_value
+    for selector, body in rules:
+        if not selector.matches(node): continue
+        for property, value in body.items():
+            computed_value = compute_style(node, property, value)
+            if not computed_value: continue
+            node.style[property] = computed_value
+    if isinstance(node, Element) and "style" in node.attributes:
+        pairs = CSSParser(node.attributes["style"]).body()
+        for property, value in pairs.items():
+            computed_value = compute_style(node, property, value)
+            node.style[property] = computed_value
+    for child in node.children:
+        style(child, rules)
+
+def cascade_priority(rule):
+    selector, body = rule
+    return selector.priority
+
 class InlineLayout:
     def __init__(self, node, parent, previous):
         self.node = node # layout node에 대응하는 html node
@@ -133,10 +297,10 @@ class InlineLayout:
         if isinstance(node, Text):
             self.text(node)
         else:
-            self.open_tag(node.tag)
+            if node.tag == "br":
+                self.flush()
             for child in node.children:
                 self.recurse(child)
-            self.close_tag(node.tag)
 
     def open_tag(self, tag):
         if tag == "i":
@@ -164,35 +328,40 @@ class InlineLayout:
             self.cursor_y += VSTEP
         
     def text(self, node):
-        font = get_font(self.size, self.weight, self.style)
+        color = node.style["color"]
+        weight = node.style["font-weight"]
+        style = node.style["font-style"]
+        if style == "normal": style = "roman"
+        size = int(float(node.style["font-size"][:-2]) * .75)
+        font = get_font(size, weight, style)
         for word in node.text.split():
-            word_width = font.measure(word)
-            if self.cursor_x + word_width > self.width - HSTEP:
+            w = font.measure(word)
+            if self.cursor_x + w > self.x + self.width:
                 self.flush()
-            self.line.append((self.cursor_x, word, font))
-            self.cursor_x += word_width + font.measure(" ")
+            self.line.append((self.cursor_x, word, font, color))
+            self.cursor_x += w + font.measure(" ")
 
     def flush(self):
         if not self.line: return
-        metrics = [font.metrics() for x, word, font in self.line]
+        metrics = [font.metrics() for x, word, font, color in self.line]
         max_ascent = max([metric["ascent"] for metric in metrics])
         baseline = self.cursor_y + 1.25 * max_ascent
-        for x, word, font in self.line:
+        for x, word, font, color in self.line:
             y = baseline - font.metrics("ascent")
-            self.display_list.append((x, y, word, font))
+            self.display_list.append((x, y, word, font, color))
         self.cursor_x = self.x
         self.line = []
         max_descent = max([metric["descent"] for metric in metrics])
         self.cursor_y = baseline + 1.25 * max_descent
 
     def paint(self, display_list):
-        if isinstance(self.node, Element) and self.node.tag == "pre":
+        bgcolor = self.node.style.get("background-color", "transparent")
+        if bgcolor != "transparent":
             x2, y2 = self.x + self.width, self.y + self.height
-            rect = DrawRect(self.x, self.y, x2, y2, "gray") 
+            rect = DrawRect(self.x, self.y, x2, y2, bgcolor)
             display_list.append(rect)
-        for x, y, word, font in self.display_list:
-            display_list.append(DrawText(x, y, word, font)) # layout에서 계산된 명세를 DrawText로 그리는 명령어를 display_l
-
+        for x, y, word, font, color in self.display_list:
+            display_list.append(DrawText(x, y, word, font, color))
     def __repr__(self):
         return "InlineLayout(x={}, y={}, width={}, height={}, node={})".format(
             self.x, self.y, self.width, self.height, self.node)
@@ -229,11 +398,12 @@ class DocumentLayout:
         return "DocumentLayout()"
 
 class DrawText:
-    def __init__(self, x1, y1, text, font):
+    def __init__(self, x1, y1, text, font, color):
         self.top = y1
         self.left = x1
         self.text = text
         self.font = font
+        self.color = color
 
         self.bottom = y1 + font.metrics("linespace")
 
@@ -243,11 +413,12 @@ class DrawText:
             text=self.text,
             font=self.font,
             anchor='nw',
+            fill=self.color,
         )
 
     def __repr__(self):
-        return "DrawText(top={} left={} bottom={} text={} font={})".format(
-            self.top, self.left, self.bottom, self.text, self.font)
+        return "DrawText(text={})".format(self.text)
+
 
 
 class DrawRect:
@@ -269,6 +440,7 @@ class DrawRect:
     def __repr__(self):
         return "DrawRect(top={} left={} bottom={} right={} color={})".format(
             self.top, self.left, self.bottom, self.right, self.color)
+
 class Browser():
     def __init__(self) -> None:
         self.window = tkinter.Tk() # Talks to your operating system to create a window
@@ -279,12 +451,30 @@ class Browser():
         self.window.bind("<Down>", self.scrolldown)
         self.display_list = [] # display_list는 무엇을 어떻게 그리라는 명령어의 리스트.
 
+        with open("default.css") as f:
+            self.default_style_sheet = CSSParser(f.read()).parse()
+
     def load(self, url):
-        _, body = request(url)
-        self.nodes = HTMLParser(body).parse() # 기존 lexing 제거, html parser로 DOM tree를 만든다.
+        headers, body = request(url)
+        self.nodes = HTMLParser(body).parse()
+
+        rules = self.default_style_sheet.copy()
+        links = [node.attributes["href"]
+                for node in tree_to_list(self.nodes, [])
+                if isinstance(node, Element)
+                and node.tag == "link"
+                and "href" in node.attributes
+                and node.attributes.get("rel") == "stylesheet"]
+        for link in links:
+            try:
+                header, body = request(resolve_url(link, url))
+            except:
+                continue
+            rules.extend(CSSParser(body).parse())
+        style(self.nodes, sorted(rules, key=cascade_priority))
+
         self.document = DocumentLayout(self.nodes)
         self.document.layout()
-
         self.display_list = []
         self.document.paint(self.display_list)
         self.draw()
