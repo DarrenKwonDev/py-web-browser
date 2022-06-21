@@ -22,7 +22,7 @@ class Layout:
     '''
     def __init__(self, tree):
         '''
-        lexer를 통과해 얻은 token을 기반으로 display_list를 만들자.
+        html parser를 통해 얻은 node tree를 기반으로 display_list를 만들자.
         display_list는 브라우저 상 어떤 위치에 어떻게 그릴 것인지를 담은 리스트이다.
         '''
         self.display_list = []
