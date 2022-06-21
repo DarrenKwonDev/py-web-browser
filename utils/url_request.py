@@ -14,7 +14,9 @@ def request(url: str):
         ctx = ssl.create_default_context()
         s = ctx.wrap_socket(s, server_hostname=host)
 
-    sent_bytes_size = s.send("GET {} HTTP/1.0\r\n".format(path).encode("utf8") + "Host: {}\r\n\r\n".format(host).encode("utf8"))
+    sent_bytes_size = s.send(
+        "GET {} HTTP/1.0\r\n".format(path).encode("utf8") + 
+        "Host: {}\r\n\r\n".format(host).encode("utf8"))
     print("sent_bytes_size", sent_bytes_size)
 
     response = s.makefile("r", encoding="utf8", newline="\r\n")
@@ -29,11 +31,11 @@ def request(url: str):
         header, value = line.split(":", 1)
         headers[header.lower()] = value.strip()
 
-
     assert "transfer-encoding" not in headers # allows the data to be “chunked”
     assert "content-encoding" not in headers # lets the server compress web pages before sending them
 
     body = response.read() # 앞서 header 다 읽었고, \r\n 공백 하단은 body겠지?
+
     s.close()
 
     return headers, body
