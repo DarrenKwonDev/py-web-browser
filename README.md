@@ -7,6 +7,7 @@ this browser made for pedagogical purposes not production.
 you should `Install Certificates.command` to use ssl
 
 `python3 browser.py http://motherfuckingwebsite.com/`
+`python3 browser.py http://example.org/`
 
 ## etc
 
