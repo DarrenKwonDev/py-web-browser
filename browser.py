@@ -1,37 +1,12 @@
 import tkinter # https://docs.python.org/ko/3/library/tkinter.html
 import tkinter.font
 from utils.url_request import request
-from tokens.tokens import Tag, Text
+from parse.http_parse import HTMLParser, Text, print_tree
 
 WIDTH, HEIGHT = 800, 600
 HSTEP, VSTEP = 13, 18
 SCROLL_STEP = 100
 FONTS = {}
-
-def lex(body):
-    '''
-    source text로부터 tokenizing.
-    현재 token은 Text, Tag로만 구성되어 있다.
-    '''
-    out = []
-    text = ""
-    in_tag = False
-    for c in body:
-        # <h1>wow</h1> 꼴에서 Text(wow)는 <를 만나면 끝난다.
-        # <h1>wow</h1> 꼴에서 Tag(h1)는 >를 만나면 끝난다.
-        if c == "<":
-            in_tag = True
-            if text: out.append(Text(text)) # tag를 만났으므로 Text 생성
-            text = ""
-        elif c == ">":
-            in_tag = False
-            out.append(Tag(text)) # tag가 열렸다 닫혔으므로 Tag
-            text = ""
-        else:
-            text += c
-    if not in_tag and text:
-        out.append(Text(text))
-    return out
 
 # font memorization
 def get_font(size, weight, slant):
@@ -45,12 +20,11 @@ class Layout:
     '''
     layout은 연산을 통해 브라우저에 그릴 display_list를 만드는 일이다.
     '''
-    def __init__(self, tokens):
+    def __init__(self, tree):
         '''
         lexer를 통과해 얻은 token을 기반으로 display_list를 만들자.
         display_list는 브라우저 상 어떤 위치에 어떻게 그릴 것인지를 담은 리스트이다.
         '''
-        self.tokens = tokens
         self.display_list = []
 
         self.cursor_x = HSTEP
@@ -60,42 +34,49 @@ class Layout:
         self.size = 16
 
         self.line = []
-        for tok in tokens:
-            self.token(tok)
-        self.flush()
+        self.recurse(tree)
 
-    def token(self, tok):
-        if isinstance(tok, Text):
-            self.text(tok)
-        elif tok.tag == "i":
+    def recurse(self, tree):
+        if isinstance(tree, Text):
+            self.text(tree)
+        else:
+            self.open_tag(tree.tag)
+            for child in tree.children:
+                self.recurse(child)
+            self.close_tag(tree.tag)
+
+    def open_tag(self, tag):
+        if tag == "i":
             self.style = "italic"
-        elif tok.tag == "/i":
-            self.style = "roman"
-        elif tok.tag == "b":
+        elif tag == "b":
             self.weight = "bold"
-        elif tok.tag == "/b":
-            self.weight = "normal"
-        elif tok.tag == "small":
+        elif tag == "small":
             self.size -= 2
-        elif tok.tag == "/small":
-            self.size += 2
-        elif tok.tag == "big":
+        elif tag == "big":
             self.size += 4
-        elif tok.tag == "/big":
-            self.size -= 4
-        elif tok.tag == "br":
+        elif tag == "br":
             self.flush()
-        elif tok.tag == "/p":
+
+    def close_tag(self, tag):
+        if tag == "i":
+            self.style = "roman"
+        elif tag == "b":
+            self.weight = "normal"
+        elif tag == "small":
+            self.size += 2
+        elif tag == "big":
+            self.size -= 4
+        elif tag == "p":
             self.flush()
             self.cursor_y += VSTEP
-        
-    def text(self, tok):
+
+    def text(self, node):
         '''
         text token을 좌표 및 폰트와 함께 line에 추가한다.
         '''
         font = get_font(self.size, self.weight, self.style)
         # 영어와 같은 표음 문자는 출력과 word-break가 word 단위로 이루어져야 함
-        for word in tok.text.split():
+        for word in node.text.split():
             word_width = font.measure(word)
             right_end = self.cursor_x + word_width 
             if right_end > WIDTH - HSTEP: # 그리려는 단어가 브라우저의 끝을 넘어가면 flush해야 함.
@@ -119,7 +100,6 @@ class Layout:
         max_descent = max([metric["descent"] for metric in metrics])
         self.cursor_y = baseline + 1.25 * max_descent
 
-
 class Browser():
     def __init__(self) -> None:
         self.window = tkinter.Tk() # Talks to your operating system to create a window
@@ -134,12 +114,16 @@ class Browser():
             weight="bold",
             slant="italic",
         )
+        self.display_list = []
 
     def load(self, url):
         _, body = request(url)
-        tokens = lex(body)
-        
-        self.display_list = Layout(tokens).display_list
+        self.nodes = HTMLParser(body).parse() # 기존 lexing 제거, html parser로 DOM tree를 만든다.
+
+        print("treecheck")
+        print_tree(self.nodes) # DOM tree print
+
+        self.display_list = Layout(self.nodes).display_list
         self.draw()
 
     def draw(self):
